@@ -1,12 +1,10 @@
-use rand::random;
 use crate::crypto::symmetric_algs::DES;
-
+use rand::random;
 
 #[derive(Copy, Clone, Debug, Default)]
 pub struct DEAL128 {
     round_keys: [u64; 6],
 }
-
 
 fn get_bit_at(i: u8) -> u64 {
     assert!((1..=64).contains(&i));
@@ -35,7 +33,9 @@ impl DEAL128 {
     }
 
     pub fn with_key(key: u128) -> Self {
-        Self { round_keys: get_round_keys(key) }
+        Self {
+            round_keys: get_round_keys(key),
+        }
     }
 
     pub fn encrypt(&self, input: u128) -> u128 {
@@ -58,7 +58,6 @@ impl DEAL128 {
         ((x.0 as u128) << 64) | (x.1 as u128)
     }
 }
-
 
 #[cfg(test)]
 mod tests {

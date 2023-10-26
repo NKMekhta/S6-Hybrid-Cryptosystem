@@ -1,19 +1,17 @@
 use s6_hcs_lib_transfer::aux::FileList;
 
-use std::{io::{
-    Write,
-    Read,
-    BufReader,
-}, fs::{
-    self,
-    File
-}, path::Path, error::Error, io};
-use std::path::PathBuf;
-use std::str::FromStr;
+use path_macro::path;
 use rand::random;
 use serde::{Deserialize, Serialize};
-use path_macro::path;
-
+use std::path::PathBuf;
+use std::str::FromStr;
+use std::{
+    error::Error,
+    fs::{self, File},
+    io,
+    io::{BufReader, Read, Write},
+    path::Path,
+};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Metadata {
@@ -21,25 +19,23 @@ struct Metadata {
     key: u128,
 }
 
-
 pub struct FileManager {
     dir: PathBuf,
 }
-
 
 impl FileManager {
     pub fn new(dir: &str) -> Result<Self, Box<dyn Error>> {
         if !(Path::new(&dir).exists()) {
             fs::create_dir_all(&dir)?;
         }
-        let new = Self { dir: PathBuf::from_str(&dir)? };
+        let new = Self {
+            dir: PathBuf::from_str(&dir)?,
+        };
         new.init_cleanup()?;
         Ok(new)
     }
 
-    pub fn save_file(&self, name: String, key: u128, contents: Vec<u128>)
-        -> io::Result<()>
-    {
+    pub fn save_file(&self, name: String, key: u128, contents: Vec<u128>) -> io::Result<()> {
         let id: u128 = random();
         let path = path!(self.dir / format!("{id}"));
         fs::create_dir_all(&path)?;

@@ -5,17 +5,15 @@ pub struct PaddingPKSC7 {
     block_size: u8,
 }
 
-
 impl Default for PaddingPKSC7 {
     fn default() -> Self {
         Self { block_size: 32 }
     }
 }
 
-
 impl PaddingAlgorithm for PaddingPKSC7 {
     fn apply_padding(&self, input: &mut Vec<u8>) {
-        let leftover_bytes= (input.len() % (self.block_size as usize)) as u8;
+        let leftover_bytes = (input.len() % (self.block_size as usize)) as u8;
         let pad_bytes = self.block_size - leftover_bytes;
 
         if pad_bytes != 0 {

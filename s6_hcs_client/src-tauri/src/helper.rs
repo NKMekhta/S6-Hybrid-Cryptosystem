@@ -1,11 +1,10 @@
+use serde::{Deserialize, Serialize};
 use std::net::TcpStream;
 use std::sync::{mpsc, mpsc::Sender};
 use std::thread::JoinHandle;
-use serde::{Serialize, Deserialize};
-use tauri::{Window};
-use websocket::ClientBuilder;
+use tauri::Window;
 use websocket::sync::Client;
-
+use websocket::ClientBuilder;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub enum RequestProcessingError {
@@ -14,7 +13,6 @@ pub enum RequestProcessingError {
     ServerError,
     BadFile,
 }
-
 
 #[derive(Serialize, Deserialize, Clone)]
 pub enum OperationProgress {
@@ -27,29 +25,33 @@ pub enum OperationProgress {
     Errored(RequestProcessingError),
 }
 
-
-pub fn err<T>(window: Window, event: &str, e: RequestProcessingError) -> Result<T, RequestProcessingError>{
-    window.emit(event, OperationProgress::Errored(e.clone())).unwrap();
+pub fn err<T>(
+    window: Window,
+    event: &str,
+    e: RequestProcessingError,
+) -> Result<T, RequestProcessingError> {
+    window
+        .emit(event, OperationProgress::Errored(e.clone()))
+        .unwrap();
     Err(e)
 }
-
 
 pub fn connect(url: &str) -> Result<Client<TcpStream>, RequestProcessingError> {
     let client = match ClientBuilder::new(url) {
         Ok(client) => client,
         Err(_) => return Err(RequestProcessingError::NoConnection),
     };
-    let client = client
-        .add_protocol("rust-websocket")
-        .connect_insecure();
+    let client = client.add_protocol("rust-websocket").connect_insecure();
     match client {
         Ok(client) => Ok(client),
         Err(_) => return Err(RequestProcessingError::NoConnection),
     }
 }
 
-
-pub fn make_progress_reporter(len: usize, cb: Box<(dyn Fn(u8) + Send)>) -> (Sender<Option<()>>, JoinHandle<()>) {
+pub fn make_progress_reporter(
+    len: usize,
+    cb: Box<(dyn Fn(u8) + Send)>,
+) -> (Sender<Option<()>>, JoinHandle<()>) {
     let (tx, rx) = mpsc::channel();
     let handle = std::thread::spawn(move || {
         let mut cnt = 0;
@@ -71,7 +73,6 @@ pub fn make_progress_reporter(len: usize, cb: Box<(dyn Fn(u8) + Send)>) -> (Send
     });
     (tx, handle)
 }
-
 
 // pub fn encrypt(window: Window, event: &str, rx: Receiver<Option<u128>>) {
 //     window.emit(event, Progress::Encrypting(0)).unwrap_or_default();

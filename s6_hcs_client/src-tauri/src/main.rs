@@ -3,7 +3,6 @@
 
 mod helper;
 
-
 fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
@@ -16,55 +15,56 @@ fn main() {
         .expect("error while running tauri application");
 }
 
-
-
 pub mod server_calls {
+    use crate::helper::*;
+    use s6_hcs_lib_crypto::crypto::{
+        padding::{PaddingAlgorithm, PaddingPKSC7},
+        symmetric_algs::{DEALMode, DEAL128},
+    };
+    use s6_hcs_lib_transfer::{aux::*, key_exchange, messages::*};
     use std::fs;
     use std::path::PathBuf;
-    use s6_hcs_lib_crypto::crypto::{
-		padding::{PaddingAlgorithm, PaddingPKSC7},
-	 	symmetric_algs::{DEAL128, DEALMode},
- 	};
-    use s6_hcs_lib_transfer::{
-        aux::*,
-        key_exchange,
-        messages::*,
-    };
     use tauri::Manager;
-    use crate::helper::*;
 
-    use Response::*;
-    use RequestProcessingError::*;
     use OperationProgress::*;
-
+    use RequestProcessingError::*;
+    use Response::*;
 
     #[tauri::command]
-    pub async fn get_files(url: &str) -> Result<Vec<(String, String, String)>, RequestProcessingError> {
+    pub async fn get_files(
+        url: &str,
+    ) -> Result<Vec<(String, String, String)>, RequestProcessingError> {
         let mut client = match connect(url) {
             Ok(client) => client,
             Err(e) => return Err(e),
         };
         request(&mut client, Request::GetFiles);
         match deserialize(client.recv_message()) {
-            Success => {},
+            Success => {}
             FSFail => return Err(ServerError),
             CommFail => return Err(BadRequest),
         }
         let list: FileList = deserialize(client.recv_message());
         let list = list
             .iter()
-            .map(|e| (
-                e.clone().0.to_string(),
-                e.clone().1.to_string(),
-                e.clone().2
-            ))
+            .map(|e| {
+                (
+                    e.clone().0.to_string(),
+                    e.clone().1.to_string(),
+                    e.clone().2,
+                )
+            })
             .collect();
         Ok(list)
     }
 
-
     #[tauri::command]
-    pub async fn upload(app: tauri::AppHandle, url: &str, file: &str, event: &str) -> Result<(), RequestProcessingError> {
+    pub async fn upload(
+        app: tauri::AppHandle,
+        url: &str,
+        file: &str,
+        event: &str,
+    ) -> Result<(), RequestProcessingError> {
         let window = app.get_window("main").unwrap();
 
         window.emit(event, Connecting).unwrap();
@@ -83,7 +83,7 @@ pub mod server_calls {
             Ok(name) => name,
         };
         if !path.exists() {
-            return err(window, event, BadFile)
+            return err(window, event, BadFile);
         }
 
         let mut contents = match fs::read(path) {
@@ -101,10 +101,10 @@ pub mod server_calls {
             let (tx, handle) = make_progress_reporter(
                 contents.len(),
                 Box::new(move |i| {
-                    app
-                        .get_window("main")
+                    app.get_window("main")
                         .unwrap()
-                        .emit(e.as_str(), Encrypting(i)).unwrap_or_default()
+                        .emit(e.as_str(), Encrypting(i))
+                        .unwrap_or_default()
                 }),
             );
             let encrypted = DEALMode::RDH.encrypt(contents, key, tx.clone());
@@ -116,30 +116,37 @@ pub mod server_calls {
 
         window.emit(event, Uploading).unwrap();
         if let Err(_) = client.send_message(&serialize(Request::Upload)) {
-            return err(window, event, NoConnection)
+            return err(window, event, NoConnection);
         }
         key_exchange::client_send(&mut client, key);
         if let Err(_) = client.send_message(&serialize(name)) {
-            return err(window, event, NoConnection)
+            return err(window, event, NoConnection);
         }
         if let Err(_) = client.send_message(&serialize(&output)) {
-            return err(window, event, NoConnection)
+            return err(window, event, NoConnection);
         }
         if let Ok(msg) = client.recv_message() {
             return match deserialize(Ok(msg)) {
-                Success => { window.emit(event, Done).unwrap(); Ok(()) },
+                Success => {
+                    window.emit(event, Done).unwrap();
+                    Ok(())
+                }
                 FSFail => err(window, event, ServerError),
                 CommFail => err(window, event, BadRequest),
-            }
+            };
         } else {
-            return err(window, event, NoConnection)
+            return err(window, event, NoConnection);
         }
     }
 
-
-
     #[tauri::command]
-    pub async fn download(app: tauri::AppHandle, url: &str, id: &str, file: &str, event: &str) -> Result<(), RequestProcessingError> {
+    pub async fn download(
+        app: tauri::AppHandle,
+        url: &str,
+        id: &str,
+        file: &str,
+        event: &str,
+    ) -> Result<(), RequestProcessingError> {
         let window = app.get_window("main").unwrap();
 
         window.emit(event, Connecting).unwrap();
@@ -155,10 +162,12 @@ pub mod server_calls {
         window.emit(event, Downloading).unwrap();
         let path = PathBuf::from(file);
         if let Err(_) = client.send_message(&serialize(Request::Download(id))) {
-            return err(window, event, NoConnection)
+            return err(window, event, NoConnection);
         }
         match deserialize(client.recv_message()) {
-            Success => { window.emit(event, Done).unwrap(); },
+            Success => {
+                window.emit(event, Done).unwrap();
+            }
             FSFail => return err(window, event, ServerError),
             CommFail => return err(window, event, BadRequest),
         }
@@ -172,14 +181,13 @@ pub mod server_calls {
             let (tx, handle) = make_progress_reporter(
                 contents.len(),
                 Box::new(move |i: u8| {
-                    app
-                        .get_window("main")
+                    app.get_window("main")
                         .unwrap()
                         .emit(e.as_str(), Encrypting(i))
                         .unwrap_or_default()
                 }),
             );
-            let decrypted= match DEALMode::RDH.decrypt(contents, key, tx.clone()) {
+            let decrypted = match DEALMode::RDH.decrypt(contents, key, tx.clone()) {
                 Ok(dec) => dec,
                 Err(_) => return err(window, event, BadFile),
             };
@@ -199,7 +207,6 @@ pub mod server_calls {
         }
     }
 
-
     #[tauri::command]
     pub async fn delete(url: &str, id: &str) -> Result<(), RequestProcessingError> {
         let id: u128 = match id.parse() {
@@ -212,7 +219,7 @@ pub mod server_calls {
         };
         request(&mut client, Request::Delete(id));
         match deserialize(client.recv_message()) {
-            Response::Success => {},
+            Response::Success => {}
             Response::FSFail => return Err(ServerError),
             Response::CommFail => return Err(BadRequest),
         }

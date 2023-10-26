@@ -1,9 +1,8 @@
-use std::ops::{Div, Sub};
 use num_bigint::{BigInt, RandBigInt};
 use num_integer::Integer;
 use num_traits::{One, Zero};
 use rand::thread_rng;
-
+use std::ops::{Div, Sub};
 
 fn extended_gcd(a: &BigInt, b: &BigInt) -> (BigInt, BigInt, BigInt) {
     let mut remainder = (a.clone(), b.clone());
@@ -22,7 +21,6 @@ fn extended_gcd(a: &BigInt, b: &BigInt) -> (BigInt, BigInt, BigInt) {
     return (remainder.0, s.0, t.0);
 }
 
-
 fn jacobi_symbol(j: (BigInt, BigInt)) -> i8 {
     let (mut a, mut n) = (j.0.clone(), j.1.clone());
     let mut result = 1;
@@ -31,10 +29,7 @@ fn jacobi_symbol(j: (BigInt, BigInt)) -> i8 {
         while a.is_even() {
             a >>= 1;
             let n_mod_8: BigInt = n.clone() % 8;
-            if {
-                n_mod_8.eq(&BigInt::from(3))
-                    || n_mod_8.eq(&BigInt::from(5))
-            } {
+            if n_mod_8.eq(&BigInt::from(3)) || n_mod_8.eq(&BigInt::from(5)) {
                 result = -result;
             }
         }
@@ -58,58 +53,50 @@ fn jacobi_symbol(j: (BigInt, BigInt)) -> i8 {
 
 pub fn fermat_test(n: &BigInt, i: u64) -> bool {
     if n <= &BigInt::one() || n.is_even() {
-        return false
+        return false;
     }
     if n <= &BigInt::from(3) {
-        return true
+        return true;
     }
 
     for _ in 0..i {
-        let a = thread_rng().gen_bigint_range(
-            &BigInt::from(2),
-            &BigInt::from(n.sub(1))
-        );
+        let a = thread_rng().gen_bigint_range(&BigInt::from(2), &BigInt::from(n.sub(1)));
         if extended_gcd(&a, n).0 != BigInt::one() {
-            return false
+            return false;
         }
         if a.modpow(&BigInt::from(n.sub(1)), n).ne(&BigInt::one()) {
-            return false
+            return false;
         }
     }
     true
 }
 
-
 pub fn solovey_strassen_test(n: &BigInt, i: u64) -> bool {
     if n <= &BigInt::one() || n.is_even() {
-        return false
+        return false;
     }
     if n <= &BigInt::from(3) {
-        return true
+        return true;
     }
 
     for _ in 0..i {
-        let a = thread_rng().gen_bigint_range(
-            &BigInt::from(2),
-            n
-        );
+        let a = thread_rng().gen_bigint_range(&BigInt::from(2), n);
         let x = jacobi_symbol((a.clone(), n.clone()));
         let tmp: BigInt = n.clone();
         let tmp: BigInt = BigInt::from(tmp.sub(1)).div(2);
         if x.is_zero() || a.modpow(&tmp, n) != BigInt::from(x) {
-            return false
+            return false;
         }
     }
     true
 }
 
-
 pub fn miller_rabin_test(n: &BigInt, i: u64) -> bool {
     if n <= &BigInt::one() || n.is_even() {
-        return false
+        return false;
     }
     if n <= &BigInt::from(3) {
-        return true
+        return true;
     }
 
     let mut s = 0u64;
@@ -120,33 +107,28 @@ pub fn miller_rabin_test(n: &BigInt, i: u64) -> bool {
     }
 
     for _ in 0..i {
-        let a = thread_rng().gen_bigint_range(
-            &BigInt::from(2),
-            &BigInt::from(n - 1)
-        );
+        let a = thread_rng().gen_bigint_range(&BigInt::from(2), &BigInt::from(n - 1));
 
         let mut x = a.modpow(&d, &n);
         let mut y = BigInt::zero();
         for _ in 0..s {
             y = x.modpow(&BigInt::from(2), &n);
             if y == BigInt::one() && x != BigInt::one() && x != n - 1 {
-                return false
+                return false;
             }
             x = y.clone()
         }
         if y != BigInt::one() {
-            return false
+            return false;
         }
     }
     true
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use num_bigint::BigInt;
-
 
     #[test]
     fn test_extended_gcd() {

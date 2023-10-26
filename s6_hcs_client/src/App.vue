@@ -130,7 +130,7 @@ createVuetify({
 
 const hostname = ref("localhost");
 const port = ref(2794);
-const tab = ref();
+const tab = ref("connection");
 const isRefreshing = ref(false);
 let address = computed(() => {
   return "ws://" + hostname.value + ':' + port.value.toString();
@@ -142,19 +142,19 @@ let file_headers = ref([
   { title: 'Size', key: 'size' },
   { title: '', key: 'actions', sortable: false, align: "end" },
 ]);
-let file_items = ref([]);
+let file_items = ref<any[]>([]);
 
 
 let op_headers = ref([
   { title: 'File Name', key: 'name' },
   { title: 'Status', key: 'status', align: "end" },
 ]);
-let op_items = ref([]);
+let op_items = ref<any[]>([]);
 
 
 const handleRefresh = async () => {
   isRefreshing.value = true;
-  invoke('get_files', { url: address.value }).then((files) => {
+  invoke('get_files', { url: address.value }).then((files: any) => {
     let new_items = [];
     for (let f in files) {
       new_items.push({
@@ -165,7 +165,7 @@ const handleRefresh = async () => {
     }
     file_items.value = new_items;
     isRefreshing.value = false;
-  }).catch((err) => {
+  }).catch((err: any) => {
     file_items.value = [];
     // TODO error notify
     isRefreshing.value = false;
@@ -174,76 +174,86 @@ const handleRefresh = async () => {
 
 
 const handleUpload = async () => {
-  const file = await open({
+  open({
     multiple: false,
-  });
-
-  const ev_name = Math.random().toString(36).slice(2, 7);
-  let item = reactive({
-    id: ev_name,
-    name: "Upload " + file,
-    status: "Starting",
-    progress: 0,
-  });
-  op_items.value.push(item);
-  const unlisten = await listen(ev_name, (event) => {
-    if (typeof event.payload === "string") {
-      item.status = event.payload;
-    } else if (event.payload instanceof Object) {
-      item.status = Object.keys(event.payload)[0];
-      item.progress = <number>event.payload[item.status];
+  }).then(async (file: any) => {
+    if (typeof file !== "string") {
+      return
     }
-  });
 
-  invoke('upload', {
-    url: address.value,
-    file: file.toString(),
-    event: ev_name,
-  }).then(() => {
-    unlisten();
-    item.status = "Done";
-    handleRefresh();
-  }).catch((err) => {
-    unlisten();
-    item.status = err
-  })
+    const ev_name = Math.random().toString(36).slice(2, 7);
+    let item: any = reactive({
+      id: ev_name,
+      name: "Upload " + file,
+      status: "Starting",
+      progress: 0,
+    });
+    op_items.value.push(item);
+    const unlisten = await listen(ev_name, (event) => {
+      if (typeof event.payload === "string") {
+        item.status = event.payload;
+      } else if (event.payload instanceof Object) {
+        item.status = Object.keys(event.payload)[0];
+        item.progress = <number>event.payload[item.status];
+      }
+    });
+
+    invoke('upload', {
+      url: address.value,
+      file: file.toString(),
+      event: ev_name,
+    }).then(() => {
+      unlisten();
+      item.status = "Done";
+      handleRefresh();
+    }).catch((err) => {
+      unlisten();
+      item.status = err
+    })
+
+  }).catch(() => {});
 }
 
 
-const handleDownload = async (entry) => {
-  let file = await save({
+const handleDownload = async (entry: any) => {
+  save({
     defaultPath: "./" + entry.name
-  });
-
-  const ev_name = Math.random().toString(36).slice(2, 7);
-  let item = reactive({
-    id: ev_name,
-    name: "Download " + file,
-    status: "Starting",
-    progress: 0,
-  });
-  op_items.value.push(item);
-  const unlisten = await listen(ev_name, (event) => {
-    if (typeof event.payload === "string") {
-      item.status = event.payload;
-    } else if (event.payload instanceof Object) {
-      item.status = Object.keys(event.payload)[0];
-      item.progress = <number>event.payload[item.status];
+  }).then(async (file: any) => {
+    if (typeof file !== "string") {
+      return
     }
+
+    const ev_name = Math.random().toString(36).slice(2, 7);
+    let item = reactive({
+      id: ev_name,
+      name: "Download " + file,
+      status: "Starting",
+      progress: 0,
+    });
+    op_items.value.push(item);
+    const unlisten = await listen(ev_name, (event: any) => {
+      if (typeof event.payload === "string") {
+        item.status = event.payload;
+      } else if (event.payload instanceof Object) {
+        item.status = Object.keys(event.payload)[0];
+        item.progress = <number>event.payload[item.status];
+      }
+    });
+    invoke('download', {
+      url: address.value,
+      id: entry.id,
+      file: file,
+      event: ev_name,
+    }).then(() => {
+      unlisten();
+      item.status = "Done";
+      handleRefresh();
+    }).catch((err) => {
+      unlisten();
+      item.status = err
+    })
+
   });
-  invoke('download', {
-    url: address.value,
-    id: entry.id,
-    file: file,
-    event: ev_name,
-  }).then(() => {
-    unlisten();
-    item.status = "Done";
-    handleRefresh();
-  }).catch((err) => {
-    unlisten();
-    item.status = err
-  })
 }
 
 

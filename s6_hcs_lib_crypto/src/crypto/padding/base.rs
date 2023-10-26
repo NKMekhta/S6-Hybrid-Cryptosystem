@@ -1,6 +1,6 @@
 pub trait PaddingAlgorithm
 where
-    Self: Copy
+    Self: Copy,
 {
     fn apply_padding(&self, input: &mut Vec<u8>);
     fn remove_padding(&self, input: &mut Vec<u8>);

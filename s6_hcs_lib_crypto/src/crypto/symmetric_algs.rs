@@ -1,7 +1,7 @@
 mod deal;
-mod des;
 mod deal_modes;
+mod des;
 
-pub use des::DES;
 pub use deal::DEAL128;
 pub use deal_modes::DEALMode;
+pub use des::DES;
