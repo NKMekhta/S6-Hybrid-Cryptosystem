@@ -12,3 +12,4 @@ num-integer = "0.1.45"
 log = "0.4.20"
 maplit = "1.0.2"
 serde = { version = "1.0", features = ["derive"] }
+rayon = "1.8.0"

@@ -1,5 +1,7 @@
 use std::hash::{Hash, Hasher};
+use std::sync::mpsc::{Sender};
 use rand::random;
+use rayon::prelude::*;
 use crate::crypto::symmetric_algs::DEAL128;
 
 
@@ -15,48 +17,70 @@ pub enum DEALMode {
 
 
 impl DEALMode {
-    pub fn encrypt(&self, data: Vec<u128>, key: u128, cb: &dyn Fn(u8)) -> Vec<u128> {
-        let mut b = std::collections::hash_map::DefaultHasher::new();
+    pub fn encrypt(&self, input: Vec<u128>, key: u128, tx: Sender<Option<()>>) -> Vec<u128> {
+        let hash = {
+            let mut hash = std::collections::hash_map::DefaultHasher::new();
+            input.hash(&mut hash);
+            hash.finish() as u128
+        };
 
-        let mut iv = random::<u128>() >> 1;
-        let delta: u64 = iv as u64;
-        data.hash(&mut b);
-        let hash = b.finish() as u128;
+        let iv = random::<u128>() >> 1;
+        let delta = iv as u64 as u128;
         let deal = DEAL128::with_key(key);
-        let mut enc = Vec::new();
-        enc.push(deal.encrypt(iv));
-        enc.push(deal.encrypt(hash ^ iv));
-        let step = data.len() / 100 + 1;
+        let mut enc_header = vec![
+            deal.encrypt(iv),
+            deal.encrypt(hash ^ iv),
+        ];
 
-        for i in 0..(data.len()) {
-            if i % step == 0 {
-                cb((i / step + 1) as u8);
-            }
-            iv += delta as u128;
-            enc.push(deal.encrypt(data[i] ^ iv))
-        }
-        enc
+        let mut output: Vec<(usize, u128)> = input
+            .iter()
+            .enumerate()
+            .collect::<Vec<(usize, &u128)>>()
+            .par_iter()
+            .map(|(i, &b)| {
+                tx.send(Some(())).unwrap_or_default();
+                (i.clone(), deal.encrypt(b ^ (iv + delta * (*i as u128 + 1))))
+            })
+            .collect();
+        output.par_sort_unstable_by_key(|(i, _)| i.clone());
+        let mut output = output
+            .iter()
+            .map(|(_, b)| b.clone())
+            .collect();
+        enc_header.append(&mut output);
+        enc_header
     }
 
-    pub fn decrypt(&self, data: Vec<u128>, key: u128, cb: &dyn Fn(u8)) -> Result<Vec<u128>, ()> {
-        let mut b = std::collections::hash_map::DefaultHasher::new();
 
+    pub fn decrypt(&self, data: Vec<u128>, key: u128, tx: Sender<Option<()>>) -> Result<Vec<u128>, ()> {
         let deal = DEAL128::with_key(key);
-        let mut dec = Vec::new();
-        let mut iv = deal.decrypt(data[0]);
-        let delta: u64 = iv as u64;
-        let hash = deal.decrypt(data[1]) ^ iv;
-        let step = data.len() / 100 + 1;
+        let iv = deal.decrypt(data[0]);
+        let delta = iv as u64 as u128;
+        let in_hash = deal.decrypt(data[1]) ^ iv;
 
-        for i in 2..(data.len()) {
-            if i % step == 0 {
-                cb((i / step + 1) as u8);
-            }
-            iv += delta as u128;
-            dec.push(deal.decrypt(data[i]) ^ iv);
-        }
-        dec.hash(&mut b);
-        if b.finish() as u128 == hash {
+        let mut dec: Vec<(usize, u128)> = data[2..]
+            .iter()
+            .enumerate()
+            .collect::<Vec<(usize, &u128)>>()
+            .par_iter()
+            .map(|(i, &b)| {
+                tx.send(Some(())).unwrap_or_default();
+                (i.clone(), deal.decrypt(b) ^ (iv + delta * (*i as u128 + 1)))
+            })
+            .collect();
+        dec.par_sort_unstable_by_key(|(i, _)| i.clone());
+        let dec: Vec<u128> = dec
+            .iter()
+            .map(|(_, b)| b.clone())
+            .collect();
+
+        let out_hash = {
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            dec.hash(&mut hasher);
+            hasher.finish() as u128
+        };
+
+        if out_hash == in_hash {
             Ok(dec)
         } else {
             Err(())
@@ -67,15 +91,46 @@ impl DEALMode {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::mpsc;
+    use std::thread::JoinHandle;
     use super::*;
 
 
     #[test]
     fn test_rdh() {
-        let data: Vec<u128> = (0..1).map(|_| 15).collect();
+        let data: Vec<u128> = (0..1024).map(|_| random()).collect();
         let key = DEAL128::generate_key();
-        let cb = |i| { println!("{i}"); };
-        let enc = DEALMode::RDH.encrypt(data.clone(), key, &cb);
-        DEALMode::RDH.decrypt(enc, key, &cb).unwrap();
+
+        let (tx, handle) = make_progress_reporter(data.len(), |i: u8| { println!("{i}") });
+        let enc = DEALMode::RDH.encrypt(data.clone(), key, tx);
+        assert_eq!(enc.len(), 1024 + 2);
+        handle.join().unwrap();
+
+        let (tx, handle) = make_progress_reporter(data.len() - 2, |i: u8| { println!("{i}") });
+        DEALMode::RDH.decrypt(enc, key, tx).unwrap();
+        handle.join().unwrap();
+    }
+
+    fn make_progress_reporter(len: usize, cb: fn(u8)) -> (Sender<Option<()>>, JoinHandle<()>) {
+        let (tx, rx) = mpsc::channel();
+        let handle = std::thread::spawn(move || {
+            let mut cnt = 0;
+            loop {
+                match rx.recv() {
+                    Err(_) => return,
+                    Ok(None) => return,
+                    Ok(Some(_)) => {
+                        cnt += 1;
+                        if (cnt * 100 / len) < ((cnt + 1) * 100 / len) {
+                            cb((cnt * 100 / len + 1) as u8);
+                        }
+                        if cnt >= len {
+                            return;
+                        }
+                    }
+                }
+            }
+        });
+        (tx, handle)
     }
 }
