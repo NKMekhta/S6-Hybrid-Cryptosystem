@@ -17,7 +17,7 @@ fn main() {
     use Response::*;
 
     let server = Server::bind("127.0.0.1:2794").unwrap();
-    let mgr = Arc::new(FileManager::new("./data_dir").unwrap());
+    let mgr = Arc::new(FileManager::new("./test/storage").unwrap());
 
     for connection in server.filter_map(Result::ok) {
         let mgr = Arc::clone(&mgr);
