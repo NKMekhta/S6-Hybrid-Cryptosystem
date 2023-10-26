@@ -37,7 +37,7 @@ impl FileManager {
 
     pub fn save_file(&self, name: String, key: u128, contents: Vec<u128>) -> io::Result<()> {
         let id: u128 = random();
-        let path = path!(self.dir / format!("{id}"));
+        let path = path!(self.dir / format!("{id }"));
         fs::create_dir_all(&path)?;
 
         let mut file = File::create(path!(path / "file"))?;

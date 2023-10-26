@@ -257,13 +257,13 @@ const handleDownload = async (entry: any) => {
 }
 
 
-const handleDelete = async (entry) => {
+const handleDelete = async (entry: any) => {
   invoke('delete', {
     url: address.value,
     id: entry.id
   }).then(() => {
     handleRefresh()
-  }).catch((err) => {
+  }).catch((err: any) => {
     // TODO error notify
   })
 }
