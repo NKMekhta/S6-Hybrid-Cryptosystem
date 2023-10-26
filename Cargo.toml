@@ -1,0 +1,9 @@
+[workspace]
+members = [
+    "s6_hcs_lib_crypto",
+    "s6_hcs_lib_transfer",
+    "s6_hcs_server",
+    "s6_hcs_client/src-tauri",
+]
+resolver = "2"
+

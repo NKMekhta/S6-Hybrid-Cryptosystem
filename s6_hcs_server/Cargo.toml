@@ -1,0 +1,15 @@
+[package]
+name = "s6_hcs_server"
+version = "0.1.0"
+edition = "2021"
+
+
+[dependencies]
+s6_hcs_lib_crypto = { path = "../s6_hcs_lib_crypto" }
+s6_hcs_lib_transfer = { path = "../s6_hcs_lib_transfer" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0.107"
+rand = "0.8.5"
+path_macro = "1.0.0"
+num-bigint = { version = "0.4.4", features = ["serde"] }
+websocket = "0.27.0"
