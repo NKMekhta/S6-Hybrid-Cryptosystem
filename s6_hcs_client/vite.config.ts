@@ -10,11 +10,4 @@ export default defineConfig(async () => ({
     strictPort: true,
   },
   envPrefix: ["VITE_", "TAURI_"],
-  css: {
-    preprocessorOptions: {
-      sass: {
-        additionalData: `@import "src/style/mixins"\n`
-      }
-    }
-  }
 }));
