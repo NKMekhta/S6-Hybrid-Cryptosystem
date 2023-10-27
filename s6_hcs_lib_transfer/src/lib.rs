@@ -1,3 +1,48 @@
+pub mod file_exchange {
+    use std::cmp::min;
+    use std::net::TcpStream;
+    use websocket::{OwnedMessage};
+    use websocket::sync::Client;
+
+    const DATAFRAME_SIZE: usize = 1024 * 1024 * 8;
+
+    pub fn send_file(mut sock: Client<TcpStream>, file: Vec<u8>) -> Result<(), ()> {
+        let dataframes = file.len() / DATAFRAME_SIZE +
+            ((file.len() % DATAFRAME_SIZE > 0) as usize);
+
+        if let Err(_) = sock.send_message(
+            &OwnedMessage::Binary(dataframes.to_be_bytes().to_vec())
+        ) {
+            return Err(())
+        };
+
+        for i in 0..dataframes {
+            sock.send_message(&OwnedMessage::Binary(
+                file[(i * DATAFRAME_SIZE)..min((i + 1) * DATAFRAME_SIZE, file.len())]
+                .to_owned())
+            )?
+        }
+        Ok(())
+    }
+
+    pub fn recv_file(mut sock: Client<TcpStream>) -> Result<Vec<u8>, ()> {
+        let mut file = Vec::new();
+        let dataframes: usize = match sock.recv_message()? {
+            OwnedMessage::Binary(msg) => usize::from_be_bytes(msg.into()).into(),
+            _ => return Err(())
+        };
+
+        for _ in 0..dataframes {
+             match sock.recv_message()? {
+                OwnedMessage::Binary(msg) => file.extend(msg),
+                _ => return Err(())
+             };
+        }
+        Ok(file)
+    }
+}
+
+
 pub mod key_exchange {
     use super::aux::*;
     use s6_hcs_lib_crypto::crypto::asymmetric_algs::XTR;
