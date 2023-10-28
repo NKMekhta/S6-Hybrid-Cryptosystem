@@ -14,3 +14,4 @@ path_macro = "1.0.0"
 num-bigint = { version = "0.4.4", features = ["serde"] }
 websocket = "0.27.0"
 log = "0.4.20"
+dotenv = "0.15.0"

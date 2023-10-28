@@ -6,13 +6,20 @@ use s6_hcs_lib_transfer::{aux::*, file_exchange, key_exchange, messages::*};
 use std::sync::Arc;
 use websocket::sync::Server;
 use log::{Level, log};
+use dotenv;
+
 
 fn main() {
     use Request::*;
     use Response::*;
 
-    let server = Server::bind("127.0.0.1:2794").unwrap();
-    let mgr = Arc::new(FileManager::new("./test/storage").unwrap());
+    dotenv::dotenv().unwrap_or_default();
+    let server = Server::bind(
+        dotenv::var("S6_HCS_ADDRESS").unwrap_or("0.0.0.0:2794".to_owned())
+    ).unwrap();
+    let mgr = Arc::new(FileManager::new(
+        dotenv::var("S6_HCS_DIR").unwrap().as_str()
+    ).unwrap());
 
     for connection in server.filter_map(Result::ok) {
         let mgr = Arc::clone(&mgr);
