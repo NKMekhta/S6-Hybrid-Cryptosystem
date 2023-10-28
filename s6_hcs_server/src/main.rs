@@ -3,23 +3,19 @@ mod file_manager;
 use file_manager::FileManager;
 use s6_hcs_lib_transfer::{aux::*, file_exchange, key_exchange, messages::*};
 
+use dotenv;
+use log::{log, Level};
 use std::sync::Arc;
 use websocket::sync::Server;
-use log::{Level, log};
-use dotenv;
-
 
 fn main() {
     use Request::*;
     use Response::*;
 
     dotenv::dotenv().unwrap_or_default();
-    let server = Server::bind(
-        dotenv::var("S6_HCS_ADDRESS").unwrap_or("0.0.0.0:2794".to_owned())
-    ).unwrap();
-    let mgr = Arc::new(FileManager::new(
-        dotenv::var("S6_HCS_DIR").unwrap().as_str()
-    ).unwrap());
+    let server =
+        Server::bind(dotenv::var("S6_HCS_ADDRESS").unwrap_or("0.0.0.0:2794".to_owned())).unwrap();
+    let mgr = Arc::new(FileManager::new(dotenv::var("S6_HCS_DIR").unwrap().as_str()).unwrap());
 
     for connection in server.filter_map(Result::ok) {
         let mgr = Arc::clone(&mgr);
@@ -27,7 +23,6 @@ fn main() {
             log!(Level::Info, "Client connected");
             let mut client = connection.accept().unwrap();
             match deserialize(client.recv_message()) {
-
                 GetFiles => {
                     if let Ok(list) = mgr.get_file_list() {
                         respond(&mut client, Success);
@@ -72,7 +67,6 @@ fn main() {
                         Err(_) => respond(&mut client, FSFail),
                     };
                 }
-
             };
         });
     }

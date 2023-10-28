@@ -22,7 +22,6 @@ pub enum OperationProgress {
     Downloading(u8),
 }
 
-
 pub fn connect(url: &str) -> Result<Client<TcpStream>, RequestProcessingError> {
     let client = match ClientBuilder::new(url) {
         Ok(client) => client,
@@ -60,4 +59,3 @@ pub fn make_progress_reporter(
     });
     (tx, handle)
 }
-

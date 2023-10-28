@@ -2,25 +2,33 @@ pub mod file_exchange {
     use std::cmp::min;
     use std::net::TcpStream;
     use std::sync::mpsc::Sender;
-    use websocket::{OwnedMessage::Binary as BinMsg};
     use websocket::sync::Client;
+    use websocket::OwnedMessage::Binary as BinMsg;
 
     pub const DATAFRAME_SIZE: usize = 1024 * 1024 * 8;
 
     pub fn count_dataframes(file: &Vec<u8>) -> usize {
-        ( if file.len() % DATAFRAME_SIZE > 0 { 1 } else { 0 } ) + file.len() / DATAFRAME_SIZE
+        (if file.len() % DATAFRAME_SIZE > 0 {
+            1
+        } else {
+            0
+        }) + file.len() / DATAFRAME_SIZE
     }
 
-    pub fn send_file(sock: &mut Client<TcpStream>, file: Vec<u8>, tx: Option<Sender<Option<()>>>) -> Result<(), ()> {
+    pub fn send_file(
+        sock: &mut Client<TcpStream>,
+        file: Vec<u8>,
+        tx: Option<Sender<Option<()>>>,
+    ) -> Result<(), ()> {
         let dataframes = count_dataframes(&file);
         if let Err(_) = sock.send_message(&BinMsg(dataframes.to_be_bytes().to_vec())) {
-            return Err(())
+            return Err(());
         };
         for i in 0..dataframes {
             let lower = i * DATAFRAME_SIZE;
             let higher = min((i + 1) * DATAFRAME_SIZE, file.len());
             if let Err(_) = sock.send_message(&BinMsg(file[lower..higher].to_owned())) {
-                return Err(())
+                return Err(());
             }
             tx.clone().and_then(|t: Sender<_>| t.send(Some(())).into());
         }
@@ -28,18 +36,17 @@ pub mod file_exchange {
         Ok(())
     }
 
-
     pub fn recv_file_len(sock: &mut Client<TcpStream>) -> Result<usize, ()> {
         match sock.recv_message() {
             Ok(BinMsg(msg)) => Ok(usize::from_be_bytes(msg.try_into().unwrap())),
-            _ => return Err(())
+            _ => return Err(()),
         }
     }
 
     pub fn recv_file(
         sock: &mut Client<TcpStream>,
         dataframes: usize,
-        tx: Option<Sender<Option<()>>>
+        tx: Option<Sender<Option<()>>>,
     ) -> Result<Vec<u8>, ()> {
         let mut file = Vec::new();
         for _ in 0..dataframes {
@@ -53,7 +60,6 @@ pub mod file_exchange {
         Ok(file)
     }
 }
-
 
 pub mod key_exchange {
     use super::aux::*;

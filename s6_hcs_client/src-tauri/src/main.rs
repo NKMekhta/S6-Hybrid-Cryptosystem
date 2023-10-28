@@ -21,7 +21,7 @@ pub mod server_calls {
         padding::{PaddingAlgorithm, PaddingPKSC7},
         symmetric_algs::{DEALMode, DEAL128},
     };
-    use s6_hcs_lib_transfer::{aux::*, key_exchange, messages::*, file_exchange};
+    use s6_hcs_lib_transfer::{aux::*, file_exchange, key_exchange, messages::*};
     use std::fs;
     use std::path::PathBuf;
     use tauri::Manager;
@@ -29,7 +29,6 @@ pub mod server_calls {
     use OperationProgress::*;
     use RequestProcessingError::*;
     use Response::*;
-
 
     #[tauri::command]
     pub async fn get_files(
@@ -100,11 +99,9 @@ pub mod server_calls {
             let e = event.to_owned();
             let (tx, handle) = make_progress_reporter(
                 contents_dec.len(),
-                Box::new(move |i| {
-                    w.emit(e.as_str(), Encrypting(i)).unwrap_or_default()
-                }),
+                Box::new(move |i| w.emit(e.as_str(), Encrypting(i)).unwrap_or_default()),
             );
-            let contents_enc = DEALMode::RDH.encrypt(contents_dec, key, tx.clone());
+            let contents_enc = DEALMode::RDH.encrypt(contents_dec, key, Some(tx.clone()));
             tx.send(None).unwrap_or_default();
             handle.join().unwrap_or_default();
             window.emit(event, Encrypting(100)).unwrap_or_default();
@@ -126,15 +123,9 @@ pub mod server_calls {
             let e = event.to_owned();
             let (tx, handle) = make_progress_reporter(
                 file_exchange::count_dataframes(&contents_enc),
-                Box::new(move |i| {
-                    w.emit(e.as_str(), Uploading(i)).unwrap_or_default()
-                }),
+                Box::new(move |i| w.emit(e.as_str(), Uploading(i)).unwrap_or_default()),
             );
-            if let Err(_) = file_exchange::send_file(
-                &mut client,
-                contents_enc,
-                Some(tx.clone()),
-            ) {
+            if let Err(_) = file_exchange::send_file(&mut client, contents_enc, Some(tx.clone())) {
                 return Err(NoConnection);
             }
             tx.send(None).unwrap_or_default();
@@ -195,15 +186,9 @@ pub mod server_calls {
             };
             let (tx, handle) = make_progress_reporter(
                 size,
-                Box::new(move |i| {
-                    w.emit(e.as_str(), Downloading(i)).unwrap_or_default()
-                }),
+                Box::new(move |i| w.emit(e.as_str(), Downloading(i)).unwrap_or_default()),
             );
-            let contents = match file_exchange::recv_file(
-                &mut client,
-                size,
-                Some(tx.clone())
-            ) {
+            let contents = match file_exchange::recv_file(&mut client, size, Some(tx.clone())) {
                 Ok(c) => c,
                 Err(_) => return Err(NoConnection),
             };
@@ -219,11 +204,9 @@ pub mod server_calls {
             let w = window.clone();
             let (tx, handle) = make_progress_reporter(
                 contents_enc.len(),
-                Box::new(move |i: u8| {
-                    w.emit(e.as_str(), Decrypting(i)).unwrap_or_default()
-                }),
+                Box::new(move |i: u8| w.emit(e.as_str(), Decrypting(i)).unwrap_or_default()),
             );
-            let decrypted = match DEALMode::RDH.decrypt(contents_enc, key, tx.clone()) {
+            let decrypted = match DEALMode::RDH.decrypt(contents_enc, key, Some(tx.clone())) {
                 Ok(dec) => dec,
                 Err(_) => return Err(BadFile),
             };
