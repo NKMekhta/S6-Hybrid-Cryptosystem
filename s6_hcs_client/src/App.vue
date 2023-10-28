@@ -189,13 +189,9 @@ const handleUpload = async () => {
       progress: 0,
     });
     op_items.value.push(item);
-    const unlisten = await listen(ev_name, (event) => {
-      if (typeof event.payload === "string") {
-        item.status = event.payload;
-      } else if (event.payload instanceof Object) {
-        item.status = Object.keys(event.payload)[0];
-        item.progress = <number>event.payload[item.status];
-      }
+    const unlisten = await listen(ev_name, (event: Object) => {
+      item.status = Object.keys(event.payload)[0];
+      item.progress = <number>event.payload[item.status];
     });
 
     invoke('upload', {
@@ -205,10 +201,12 @@ const handleUpload = async () => {
     }).then(() => {
       unlisten();
       item.status = "Done";
+      item.progress = 100;
       handleRefresh();
     }).catch((err) => {
       unlisten();
-      item.status = err
+      item.status = err;
+      item.progress = 0;
     })
 
   }).catch(() => {});
@@ -232,12 +230,8 @@ const handleDownload = async (entry: any) => {
     });
     op_items.value.push(item);
     const unlisten = await listen(ev_name, (event: any) => {
-      if (typeof event.payload === "string") {
-        item.status = event.payload;
-      } else if (event.payload instanceof Object) {
-        item.status = Object.keys(event.payload)[0];
-        item.progress = <number>event.payload[item.status];
-      }
+      item.status = Object.keys(event.payload)[0];
+      item.progress = <number>event.payload[item.status];
     });
     invoke('download', {
       url: address.value,
@@ -247,10 +241,12 @@ const handleDownload = async (entry: any) => {
     }).then(() => {
       unlisten();
       item.status = "Done";
+      item.progress = 100;
       handleRefresh();
     }).catch((err) => {
       unlisten();
-      item.status = err
+      item.status = err;
+      item.progress = 0;
     })
 
   });

@@ -1,10 +1,11 @@
 mod file_manager;
 
 use file_manager::FileManager;
-use s6_hcs_lib_transfer::{aux::*, key_exchange, messages::*};
+use s6_hcs_lib_transfer::{aux::*, file_exchange, key_exchange, messages::*};
 
 use std::sync::Arc;
 use websocket::sync::Server;
+use log::{Level, log};
 
 fn main() {
     use Request::*;
@@ -16,12 +17,14 @@ fn main() {
     for connection in server.filter_map(Result::ok) {
         let mgr = Arc::clone(&mgr);
         std::thread::spawn(move || {
+            log!(Level::Info, "Client connected");
             let mut client = connection.accept().unwrap();
             match deserialize(client.recv_message()) {
+
                 GetFiles => {
                     if let Ok(list) = mgr.get_file_list() {
                         respond(&mut client, Success);
-                        println!("requested list {}", list.len());
+                        log!(Level::Info, "Sending list of {}", list.len());
                         client.send_message(&serialize(list)).unwrap();
                     } else {
                         respond(&mut client, FSFail);
@@ -31,8 +34,9 @@ fn main() {
                 Upload => {
                     let key = key_exchange::server_receive(&mut client);
                     let name = deserialize(client.recv_message());
-                    println!("received {name}");
-                    let contents = deserialize(client.recv_message());
+                    log!(Level::Info, "Receiving of {}", name);
+                    let size = file_exchange::recv_file_len(&mut client).unwrap();
+                    let contents = file_exchange::recv_file(&mut client, size, None).unwrap();
                     if let Ok(()) = mgr.save_file(name, key, contents) {
                         respond(&mut client, Success);
                     } else {
@@ -52,7 +56,7 @@ fn main() {
                         }
                     };
                     key_exchange::server_send(&mut client, key);
-                    client.send_message(&serialize(contents)).unwrap();
+                    file_exchange::send_file(&mut client, contents, None).unwrap();
                 }
 
                 Delete(id) => {
@@ -61,6 +65,7 @@ fn main() {
                         Err(_) => respond(&mut client, FSFail),
                     };
                 }
+
             };
         });
     }

@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 use std::net::TcpStream;
 use std::sync::{mpsc, mpsc::Sender};
 use std::thread::JoinHandle;
-use tauri::Window;
 use websocket::sync::Client;
 use websocket::ClientBuilder;
 
@@ -16,25 +15,13 @@ pub enum RequestProcessingError {
 
 #[derive(Serialize, Deserialize, Clone)]
 pub enum OperationProgress {
-    Connecting,
+    Connecting(u8),
     Encrypting(u8),
     Decrypting(u8),
-    Uploading,
-    Downloading,
-    Done,
-    Errored(RequestProcessingError),
+    Uploading(u8),
+    Downloading(u8),
 }
 
-pub fn err<T>(
-    window: Window,
-    event: &str,
-    e: RequestProcessingError,
-) -> Result<T, RequestProcessingError> {
-    window
-        .emit(event, OperationProgress::Errored(e.clone()))
-        .unwrap();
-    Err(e)
-}
 
 pub fn connect(url: &str) -> Result<Client<TcpStream>, RequestProcessingError> {
     let client = match ClientBuilder::new(url) {
@@ -74,15 +61,3 @@ pub fn make_progress_reporter(
     (tx, handle)
 }
 
-// pub fn encrypt(window: Window, event: &str, rx: Receiver<Option<u128>>) {
-//     window.emit(event, Progress::Encrypting(0)).unwrap_or_default();
-//     let (tx, handle) = make_progress_reporter(
-//         contents.len(),
-//         progress_callback,
-//     );
-//     let encrypted = DEALMode::RDH.encrypt(contents, key, tx);
-//     tx.send(None).unwrap_or_default();
-//     handle.join().unwrap_or_default();
-//     window.emit(event, Progress::Encrypting(100)).unwrap_or_default();
-//     encrypted
-// }

@@ -1,43 +1,55 @@
 pub mod file_exchange {
     use std::cmp::min;
     use std::net::TcpStream;
-    use websocket::{OwnedMessage};
+    use std::sync::mpsc::Sender;
+    use websocket::{OwnedMessage::Binary as BinMsg};
     use websocket::sync::Client;
 
-    const DATAFRAME_SIZE: usize = 1024 * 1024 * 8;
+    pub const DATAFRAME_SIZE: usize = 1024 * 1024 * 8;
 
-    pub fn send_file(mut sock: Client<TcpStream>, file: Vec<u8>) -> Result<(), ()> {
-        let dataframes = file.len() / DATAFRAME_SIZE +
-            ((file.len() % DATAFRAME_SIZE > 0) as usize);
+    pub fn count_dataframes(file: &Vec<u8>) -> usize {
+        ( if file.len() % DATAFRAME_SIZE > 0 { 1 } else { 0 } ) + file.len() / DATAFRAME_SIZE
+    }
 
-        if let Err(_) = sock.send_message(
-            &OwnedMessage::Binary(dataframes.to_be_bytes().to_vec())
-        ) {
+    pub fn send_file(sock: &mut Client<TcpStream>, file: Vec<u8>, tx: Option<Sender<Option<()>>>) -> Result<(), ()> {
+        let dataframes = count_dataframes(&file);
+        if let Err(_) = sock.send_message(&BinMsg(dataframes.to_be_bytes().to_vec())) {
             return Err(())
         };
-
         for i in 0..dataframes {
-            sock.send_message(&OwnedMessage::Binary(
-                file[(i * DATAFRAME_SIZE)..min((i + 1) * DATAFRAME_SIZE, file.len())]
-                .to_owned())
-            )?
+            let lower = i * DATAFRAME_SIZE;
+            let higher = min((i + 1) * DATAFRAME_SIZE, file.len());
+            if let Err(_) = sock.send_message(&BinMsg(file[lower..higher].to_owned())) {
+                return Err(())
+            }
+            tx.clone().and_then(|t: Sender<_>| t.send(Some(())).into());
         }
+        tx.and_then(|t| t.send(None).into());
         Ok(())
     }
 
-    pub fn recv_file(mut sock: Client<TcpStream>) -> Result<Vec<u8>, ()> {
-        let mut file = Vec::new();
-        let dataframes: usize = match sock.recv_message()? {
-            OwnedMessage::Binary(msg) => usize::from_be_bytes(msg.into()).into(),
-            _ => return Err(())
-        };
 
-        for _ in 0..dataframes {
-             match sock.recv_message()? {
-                OwnedMessage::Binary(msg) => file.extend(msg),
-                _ => return Err(())
-             };
+    pub fn recv_file_len(sock: &mut Client<TcpStream>) -> Result<usize, ()> {
+        match sock.recv_message() {
+            Ok(BinMsg(msg)) => Ok(usize::from_be_bytes(msg.try_into().unwrap())),
+            _ => return Err(())
         }
+    }
+
+    pub fn recv_file(
+        sock: &mut Client<TcpStream>,
+        dataframes: usize,
+        tx: Option<Sender<Option<()>>>
+    ) -> Result<Vec<u8>, ()> {
+        let mut file = Vec::new();
+        for _ in 0..dataframes {
+            match sock.recv_message() {
+                Ok(BinMsg(msg)) => file.extend(msg),
+                _ => return Err(()),
+            }
+            tx.clone().and_then(|t| t.send(Some(())).into());
+        }
+        tx.and_then(|t| t.send(None).into());
         Ok(file)
     }
 }

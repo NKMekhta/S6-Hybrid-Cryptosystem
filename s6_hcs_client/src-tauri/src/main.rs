@@ -21,7 +21,7 @@ pub mod server_calls {
         padding::{PaddingAlgorithm, PaddingPKSC7},
         symmetric_algs::{DEALMode, DEAL128},
     };
-    use s6_hcs_lib_transfer::{aux::*, key_exchange, messages::*};
+    use s6_hcs_lib_transfer::{aux::*, key_exchange, messages::*, file_exchange};
     use std::fs;
     use std::path::PathBuf;
     use tauri::Manager;
@@ -29,6 +29,7 @@ pub mod server_calls {
     use OperationProgress::*;
     use RequestProcessingError::*;
     use Response::*;
+
 
     #[tauri::command]
     pub async fn get_files(
@@ -67,75 +68,88 @@ pub mod server_calls {
     ) -> Result<(), RequestProcessingError> {
         let window = app.get_window("main").unwrap();
 
-        window.emit(event, Connecting).unwrap();
+        window.emit(event, Connecting(0)).unwrap();
         let mut client = match connect(url) {
             Ok(client) => client,
-            Err(e) => return err(window, event, e),
+            Err(e) => return Err(e),
         };
 
-        let path = PathBuf::from(file);
-        let name = match path.clone().file_name() {
-            None => return err(window, event, BadFile),
-            Some(name) => name.to_owned().into_string(),
+        let file_path = PathBuf::from(file);
+        let file_name = match file_path.clone().file_name() {
+            None => return Err(BadFile),
+            Some(n) => match n.to_owned().into_string() {
+                Err(_) => return Err(BadFile),
+                Ok(name) => name,
+            },
         };
-        let name = match name {
-            Err(_) => return err(window, event, BadFile),
-            Ok(name) => name,
-        };
-        if !path.exists() {
-            return err(window, event, BadFile);
+        if !file_path.exists() {
+            return Err(BadFile);
         }
-
-        let mut contents = match fs::read(path) {
+        let mut contents_dec = match fs::read(file_path) {
             Ok(c) => c,
-            Err(_) => return err(window, event, BadFile),
+            Err(_) => return Err(BadFile),
         };
 
-        PaddingPKSC7::with_block_size(16).apply_padding(&mut contents);
-        let contents = u8_to_u128(contents);
+        PaddingPKSC7::with_block_size(16).apply_padding(&mut contents_dec);
+        let contents_dec = u8_to_u128(contents_dec);
         let key = DEAL128::generate_key();
 
-        let output = {
+        let contents_enc = {
             window.emit(event, Encrypting(0)).unwrap_or_default();
+            let w = window.clone();
             let e = event.to_owned();
             let (tx, handle) = make_progress_reporter(
-                contents.len(),
+                contents_dec.len(),
                 Box::new(move |i| {
-                    app.get_window("main")
-                        .unwrap()
-                        .emit(e.as_str(), Encrypting(i))
-                        .unwrap_or_default()
+                    w.emit(e.as_str(), Encrypting(i)).unwrap_or_default()
                 }),
             );
-            let encrypted = DEALMode::RDH.encrypt(contents, key, tx.clone());
+            let contents_enc = DEALMode::RDH.encrypt(contents_dec, key, tx.clone());
             tx.send(None).unwrap_or_default();
             handle.join().unwrap_or_default();
             window.emit(event, Encrypting(100)).unwrap_or_default();
-            encrypted
+            contents_enc
         };
 
-        window.emit(event, Uploading).unwrap();
         if let Err(_) = client.send_message(&serialize(Request::Upload)) {
-            return err(window, event, NoConnection);
+            return Err(NoConnection);
         }
         key_exchange::client_send(&mut client, key);
-        if let Err(_) = client.send_message(&serialize(name)) {
-            return err(window, event, NoConnection);
+        if let Err(_) = client.send_message(&serialize(file_name)) {
+            return Err(NoConnection);
         }
-        if let Err(_) = client.send_message(&serialize(&output)) {
-            return err(window, event, NoConnection);
+
+        {
+            let contents_enc = u128_to_u8(contents_enc);
+            window.emit(event, Uploading(0)).unwrap_or_default();
+            let w = window.clone();
+            let e = event.to_owned();
+            let (tx, handle) = make_progress_reporter(
+                file_exchange::count_dataframes(&contents_enc),
+                Box::new(move |i| {
+                    w.emit(e.as_str(), Uploading(i)).unwrap_or_default()
+                }),
+            );
+            if let Err(_) = file_exchange::send_file(
+                &mut client,
+                contents_enc,
+                Some(tx.clone()),
+            ) {
+                return Err(NoConnection);
+            }
+            tx.send(None).unwrap_or_default();
+            handle.join().unwrap_or_default();
+            window.emit(event, Uploading(100)).unwrap_or_default();
         }
+
         if let Ok(msg) = client.recv_message() {
-            return match deserialize(Ok(msg)) {
-                Success => {
-                    window.emit(event, Done).unwrap();
-                    Ok(())
-                }
-                FSFail => err(window, event, ServerError),
-                CommFail => err(window, event, BadRequest),
-            };
+            match deserialize(Ok(msg)) {
+                Success => Ok(()),
+                FSFail => Err(ServerError),
+                CommFail => Err(BadRequest),
+            }
         } else {
-            return err(window, event, NoConnection);
+            Err(NoConnection)
         }
     }
 
@@ -149,7 +163,7 @@ pub mod server_calls {
     ) -> Result<(), RequestProcessingError> {
         let window = app.get_window("main").unwrap();
 
-        window.emit(event, Connecting).unwrap();
+        window.emit(event, Connecting(0)).unwrap();
         let id: u128 = match id.parse() {
             Err(_) => return Err(BadRequest),
             Ok(id) => id,
@@ -159,37 +173,59 @@ pub mod server_calls {
             Err(e) => return Err(e),
         };
 
-        window.emit(event, Downloading).unwrap();
         let path = PathBuf::from(file);
         if let Err(_) = client.send_message(&serialize(Request::Download(id))) {
-            return err(window, event, NoConnection);
+            return Err(NoConnection);
         }
         match deserialize(client.recv_message()) {
-            Success => {
-                window.emit(event, Done).unwrap();
-            }
-            FSFail => return err(window, event, ServerError),
-            CommFail => return err(window, event, BadRequest),
+            Success => {}
+            FSFail => return Err(ServerError),
+            CommFail => return Err(BadRequest),
         }
 
         let key = key_exchange::client_receive(&mut client);
-        let contents: Vec<u128> = deserialize(client.recv_message());
 
-        let output = {
-            window.emit(event, Decrypting(0)).unwrap_or_default();
+        let contents_enc = {
+            window.emit(event, Downloading(0)).unwrap_or_default();
             let e = event.to_owned();
+            let w = window.clone();
+            let size = match file_exchange::recv_file_len(&mut client) {
+                Ok(s) => s,
+                Err(_) => return Err(NoConnection),
+            };
             let (tx, handle) = make_progress_reporter(
-                contents.len(),
-                Box::new(move |i: u8| {
-                    app.get_window("main")
-                        .unwrap()
-                        .emit(e.as_str(), Encrypting(i))
-                        .unwrap_or_default()
+                size,
+                Box::new(move |i| {
+                    w.emit(e.as_str(), Downloading(i)).unwrap_or_default()
                 }),
             );
-            let decrypted = match DEALMode::RDH.decrypt(contents, key, tx.clone()) {
+            let contents = match file_exchange::recv_file(
+                &mut client,
+                size,
+                Some(tx.clone())
+            ) {
+                Ok(c) => c,
+                Err(_) => return Err(NoConnection),
+            };
+            tx.send(None).unwrap_or_default();
+            handle.join().unwrap_or_default();
+            window.emit(event, Downloading(100)).unwrap_or_default();
+            u8_to_u128(contents)
+        };
+
+        let contents_dec = {
+            window.emit(event, Decrypting(0)).unwrap_or_default();
+            let e = event.to_owned();
+            let w = window.clone();
+            let (tx, handle) = make_progress_reporter(
+                contents_enc.len(),
+                Box::new(move |i: u8| {
+                    w.emit(e.as_str(), Decrypting(i)).unwrap_or_default()
+                }),
+            );
+            let decrypted = match DEALMode::RDH.decrypt(contents_enc, key, tx.clone()) {
                 Ok(dec) => dec,
-                Err(_) => return err(window, event, BadFile),
+                Err(_) => return Err(BadFile),
             };
             tx.send(None).unwrap_or_default();
             handle.join().unwrap_or_default();
@@ -197,9 +233,8 @@ pub mod server_calls {
             decrypted
         };
 
-        let mut dec = u128_to_u8(output);
+        let mut dec = u128_to_u8(contents_dec);
         PaddingPKSC7::with_block_size(16).remove_padding(&mut dec);
-        window.emit(event, Decrypting(100)).unwrap();
 
         match fs::write(path, dec) {
             Err(_) => Err(BadFile),
@@ -219,10 +254,9 @@ pub mod server_calls {
         };
         request(&mut client, Request::Delete(id));
         match deserialize(client.recv_message()) {
-            Response::Success => {}
-            Response::FSFail => return Err(ServerError),
-            Response::CommFail => return Err(BadRequest),
+            Success => Ok(()),
+            FSFail => Err(ServerError),
+            CommFail => Err(BadRequest),
         }
-        Ok(())
     }
 }

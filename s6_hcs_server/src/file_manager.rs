@@ -7,9 +7,8 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::{
     error::Error,
-    fs::{self, File},
+    fs::{self},
     io,
-    io::{BufReader, Read, Write},
     path::Path,
 };
 
@@ -35,21 +34,14 @@ impl FileManager {
         Ok(new)
     }
 
-    pub fn save_file(&self, name: String, key: u128, contents: Vec<u128>) -> io::Result<()> {
+    pub fn save_file(&self, name: String, key: u128, contents: Vec<u8>) -> io::Result<()> {
         let id: u128 = random();
-        let path = path!(self.dir / format!("{id }"));
+        let path = path!(self.dir / format!("{id}"));
         fs::create_dir_all(&path)?;
-
-        let mut file = File::create(path!(path / "file"))?;
-        for block in contents {
-            file.write_all(&block.to_be_bytes())?;
-        }
-        file.flush()?;
-
+        fs::write(&path!(path / "file"), contents)?;
         let metadata = Metadata { name, key };
         let metadata_json = serde_json::to_string(&metadata)?;
         fs::write(path!(path / "metadata.json"), metadata_json)?;
-
         Ok(())
     }
 
@@ -85,19 +77,13 @@ impl FileManager {
         Ok(file_list)
     }
 
-    pub fn get_file(&self, id: u128) -> io::Result<(Vec<u128>, u128)> {
+    pub fn get_file(&self, id: u128) -> io::Result<(Vec<u8>, u128)> {
         let path = path!(self.dir / format!("{id}"));
         fs::write(path!(path / "lock"), "")?;
-        let file = File::open(&path!(path / "file"))?;
+        let file = PathBuf::from(path!(path / "file"));
         let metadata = fs::read_to_string(path!(path / "metadata.json"))?;
         let metadata: Metadata = serde_json::from_str(&metadata)?;
-
-        let mut reader = BufReader::new(file);
-        let mut buffer = [0u8; 16];
-        let mut contents = vec![];
-        while reader.read_exact(&mut buffer).is_ok() {
-            contents.push(u128::from_be_bytes(buffer));
-        }
+        let contents = fs::read(file)?;
         fs::remove_file(path!(path / "lock"))?;
         Ok((contents, metadata.key))
     }
