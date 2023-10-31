@@ -3,7 +3,7 @@ mod file_manager;
 use file_manager::FileManager;
 use s6_hcs_lib_transfer::{aux::*, file_exchange, key_exchange, messages::*};
 
-use dotenv;
+use dotenvy::{dotenv, var};
 use log::{log, Level};
 use std::sync::Arc;
 use websocket::sync::Server;
@@ -12,10 +12,9 @@ fn main() {
     use Request::*;
     use Response::*;
 
-    dotenv::dotenv().unwrap_or_default();
-    let server =
-        Server::bind(dotenv::var("S6_HCS_ADDRESS").unwrap_or("0.0.0.0:2794".to_owned())).unwrap();
-    let mgr = Arc::new(FileManager::new(dotenv::var("S6_HCS_DIR").unwrap().as_str()).unwrap());
+    dotenv().unwrap_or_default();
+    let server = Server::bind(var("S6_HCS_ADDRESS").unwrap_or("0.0.0.0:2794".to_owned())).unwrap();
+    let mgr = Arc::new(FileManager::new(var("S6_HCS_DIR").unwrap().as_str()).unwrap());
 
     for connection in server.filter_map(Result::ok) {
         let mgr = Arc::clone(&mgr);

@@ -25,7 +25,6 @@ impl DEALMode {
         let deal = DEAL128::with_key(key);
 
         let out = match self {
-
             DEALMode::ECB => {
                 let mut output: Vec<(usize, u128)> = input
                     .iter()
